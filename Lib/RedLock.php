@@ -113,7 +113,27 @@ class RedLock
             end
          ';
 
+        // Hack:  Try to run "eval" up to 5 times if there is an exception while running it.
+        // We're getting an odd "Got X as reply type byte" error sometimes.
+        // https://github.com/nicolasff/phpredis/issues/369
 
-        return $instance->eval($script, [$resource, $token], 1);
+        $maxTries = 5;
+        $i = 0;
+        while (1) {
+            $i++;
+
+            try {
+                $return = $instance->eval($script, [$resource, $token], 1);
+                return $return;
+            } catch(RedisException $e) {
+                if ($i >= $maxTries) {
+                    return false;
+                }
+            }
+
+            // 20000 microseconds = 20ms
+            usleep(20000);
+        }
+
     }
 }
