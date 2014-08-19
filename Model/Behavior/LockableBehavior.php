@@ -166,10 +166,13 @@ class LockableBehavior extends ModelBehavior {
 		if ($this->settings[$Model->alias]['redis']) {
 			try {
 				if ($this->lockRedis($Model, $id)) {
+					if (class_exists('CakeLog')) { CakeLog::write('redisinfo', "redis lock success"); }
 					$this->_setCurrentLockMethod($Model, $id, 'redis');
 					return true;
 				}
+				if (class_exists('CakeLog')) { CakeLog::write('redisinfo', "redis lock failure - return false"); }
 			} catch (Exception $e) {
+				if (class_exists('CakeLog')) { CakeLog::write('redisinfo', "redis lock failure - exception thrown"); }
 				if (class_exists('AppLog')) {
 					AppLog::error('Exception caught while trying to lock Redis: ' . $e->getMessage());
 				}
