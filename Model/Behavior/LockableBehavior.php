@@ -10,10 +10,14 @@ if (!class_exists('LockException')) {
 
 App::uses('ModelBehavior', 'Model');
 class LockableBehavior extends ModelBehavior {
-	public $settings      = array();
-	public $locks         = array();
-	public $mutexes       = array();
-	public $mutexInts     = array();
+	public $settings  = [];
+	public $locks     = [];
+	public $mutexes   = [];
+	public $mutexInts = [];
+
+	// What is the current lock locked via?
+	//    possible values:  false (no lock), 'mutex', or 'redis
+	protected $_currentLockMethod = [];
 
 	protected $_defaults = [
 		// lock with Mutex (current machine only, multi-process locked)
@@ -158,19 +162,49 @@ class LockableBehavior extends ModelBehavior {
 	 * @throws LockException if no locking system available
 	 */
 	public function lock(Model $Model, $id) {
-		if ($this->settings[$Model->alias]['mutex']) {
-			if (!$this->lockMutex($Model, $id)) {
-				return false;
-			}
-		}
+		// If allowed, try redis lock and return true on success
 		if ($this->settings[$Model->alias]['redis']) {
-			if (!$this->lockRedis($Model, $id)) {
-				return false;
+			try {
+				if ($this->lockRedis($Model, $id)) {
+					$this->_setCurrentLockMethod($Model, $id, 'redis');
+					return true;
+				}
+			} catch (Exception $e) {
+				if (class_exists('AppLog')) {
+					AppLog::error('Exception caught while trying to lock Redis: ' . $e->getMessage());
+				}
+				if (!$this->settings[$Model->alias]['mutex']) {
+					throw new LockException('LockableBehavior:  Unable to lock with redis. Got exception:' . $e->getMessage());
+				} else {
+					// Falling back to mutex.
+				}
 			}
 		}
-		if (!$this->settings[$Model->alias]['redis'] && !$this->settings[$Model->alias]['mutex']) {
-			throw new LockException('LockableBehavior:  Deep trouble.  Neither redis or semaphore locks are working.');
+
+		// If allowed, try mutex lock and return true on success
+		if ($this->settings[$Model->alias]['mutex']) {
+			if ($this->lockMutex($Model, $id)) {
+				$this->_setCurrentLockMethod($Model, $id, 'mutex');
+				return true;
+			}
 		}
+
+		throw new LockException('LockableBehavior:  Unable to lock with either redis or mutex method.');
+	}
+
+	/**
+	 * Add entry in __currentLockMethod for $Model + $id ===> $method
+	 *
+	 * @param Model $Model
+	 * @param int $id
+	 * @param string or false $method
+	 * @return boolean true
+	 */
+	public function _setCurrentLockMethod(Model $Model, $id, $method) {
+		if (!array_key_exists($Model->alias, $this->_currentLockMethod) || !is_array($this->_currentLockMethod[$Model->alias])) {
+			$this->_currentLockMethod[$Model->alias] = [];
+		}
+		$this->_currentLockMethod[$Model->alias][$id] = $method;
 		return true;
 	}
 
@@ -196,8 +230,7 @@ class LockableBehavior extends ModelBehavior {
 		}
 
 		if (!$this->settings[$Model->alias]['mutex']) {
-			// Must return true so lock() tries other methods.
-			return true;
+			return false;
 		}
 
 		// Detemine int for MUTEX based on $id
@@ -274,13 +307,19 @@ class LockableBehavior extends ModelBehavior {
 	 * @return boolean
 	 */
 	public function unlock($Model, $id) {
-		if ($this->settings[$Model->alias]['mutex']) {
-			if (!$this->unlockMutex($Model, $id)) {
+		if (empty($this->_currentLockMethod[$Model->alias][$id])) {
+			// Was never locked in the first place
+			return true;
+		}
+
+		if ($this->_currentLockMethod[$Model->alias][$id] == 'redis') {
+			if (!$this->unlockRedis($Model, $id)) {
 				return false;
 			}
 		}
-		if ($this->settings[$Model->alias]['redis']) {
-			if (!$this->unlockRedis($Model, $id)) {
+
+		if ($this->_currentLockMethod[$Model->alias][$id] == 'mutex') {
+			if (!$this->unlockMutex($Model, $id)) {
 				return false;
 			}
 		}
