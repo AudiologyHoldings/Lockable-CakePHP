@@ -166,7 +166,6 @@ class LockableBehavior extends ModelBehavior {
 		if ($this->settings[$Model->alias]['redis']) {
 			try {
 				if ($this->lockRedis($Model, $id)) {
-					if (class_exists('CakeLog')) { CakeLog::write('lockinfo', "redis lock success"); }
 					$this->_setCurrentLockMethod($Model, $id, 'redis');
 					return true;
 				}
@@ -187,7 +186,6 @@ class LockableBehavior extends ModelBehavior {
 		// If allowed, try mutex lock and return true on success
 		if ($this->settings[$Model->alias]['mutex']) {
 			if ($this->lockMutex($Model, $id)) {
-				if (class_exists('CakeLog')) { CakeLog::write('lockinfo', "mutex lock success"); }
 				$this->_setCurrentLockMethod($Model, $id, 'mutex');
 				return true;
 			}
@@ -381,25 +379,26 @@ class LockableBehavior extends ModelBehavior {
 	 * @return boolean
 	 */
 	public function unlockRedis(Model $Model, $id) {
-		if (class_exists('CakeLog')) { CakeLog::write('lockinfo', "unlockRedis() begin"); }
 		if (!$this->settings[$Model->alias]['redis']) {
 			// Must return true so unlock() tries other methods.
-			if (class_exists('CakeLog')) { CakeLog::write('lockinfo', "unlockRedis() return true1, redis setting turned off"); }
 			return true;
 		}
 
 		$id = trim(strval($id));
 		if (empty($this->locks[$Model->alias][$id])) {
-			if (class_exists('CakeLog')) { CakeLog::write('lockinfo', "unlockRedis() return false1, could not find lock"); }
 			// lock not found :(
 			return false;
 		}
 
 		// doesn't return anything, so we just assume...
-		if (class_exists('CakeLog')) { CakeLog::write('lockinfo', "unlockRedis() about to call unlock()"); }
-		// Possibly wrap in try/catch later, but keep this way to see if i can pin the 502s on this
-		$this->getRedLockObject($Model)->unlock($this->locks[$Model->alias][$id]);
-		if (class_exists('CakeLog')) { CakeLog::write('lockinfo', "unlockRedis() finished calling unlock()"); }
+		try {
+			$this->getRedLockObject($Model)->unlock($this->locks[$Model->alias][$id]);
+		} catch(Exception $e) {
+			if (class_exists('CakeLog')) { CakeLog::write('lockinfo', "redis unlock failure - exception thrown. " . $e->getMessage()); }
+			if (class_exists('AppLog')) {
+				AppLog::error('Exception caught while trying to unlock Redis: ' . $e->getMessage());
+			}
+		}
 
 		// remove the locks Configuration
 		unset($this->locks[$Model->alias][$id]);
