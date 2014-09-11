@@ -11,7 +11,8 @@ if (!class_exists('LockException')) {
 App::uses('ModelBehavior', 'Model');
 class LockableBehavior extends ModelBehavior {
 
-	public $db = null;
+	public $db     = null;
+	public $prefix = null;
 
 	/**
 	 * Obtains a lock for Model + id combination.
@@ -28,10 +29,9 @@ class LockableBehavior extends ModelBehavior {
 	 * @return bool success (always true)
 	 */
 	public function lock(Model $Model, $id=0) {
-		logDebugP("lock called");
 		$lockResult = $this->db->fetchAll(
 			"SELECT COALESCE(GET_LOCK(?, -1), 0)",
-			["{$Model->alias}.$id"],
+			["{$this->prefix}.{$Model->alias}.$id"],
 			['cache' => false]
 		);
 		$lockResult = array_values(Hash::flatten($lockResult))[0];
@@ -58,10 +58,9 @@ class LockableBehavior extends ModelBehavior {
 	 * @return bool success
 	 */
 	public function unlock(Model $Model, $id=0) {
-		logDebugP("unlock called");
 		$lockResult = $this->db->fetchAll(
 			"SELECT COALESCE(RELEASE_LOCK(?), 1)",
-			["{$Model->alias}.$id"],
+			["{$this->prefix}.{$Model->alias}.$id"],
 			['cache' => false]
 		);
 		$lockResult = array_values(Hash::flatten($lockResult))[0];
@@ -77,9 +76,24 @@ class LockableBehavior extends ModelBehavior {
 	 *
 	 * @param object $Model
 	 * @param array $config
+	 *           $config key 'source' - string name of datasource to use instead of default (a mysql connection in database.php)
+	 *           $config key 'prefix' - string prefix used in key names.  we lock on keys that are "$prefix.{$Model->alias}.$id"
 	 */
 	public function setup(Model $Model, $config = null) {
-		$this->db = $Model->getDataSource();
+		// Prefix
+		$this->prefix = isset($config['prefix']) ? $config['prefix'] : '';
+
+		// Source (db connection)
+		if (!empty($config['source'])) {
+			try {
+				$this->db = ConnectionManager::getDataSource($config['source']);
+			} catch (Exception $e) {}
+		}
+		if (empty($this->db)) {
+			$this->db = ConnectionManager::getDataSource('default');
+		}
+
+		// Verify it's mysql
 		if (stripos($this->db->description, 'MySQL') === false) {
 			throw new LockException('Lockable Setup Problem - Lockable requires a mysql connection.');
 		}
