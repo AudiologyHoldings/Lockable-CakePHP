@@ -24,28 +24,97 @@ class LockableBehavior extends ModelBehavior {
 	 *
 	 * The lock may be removed by calling ->unlock(), or it will be automatically removed when the script ends.
 	 *
-	 * @param object $Model
-	 * @param mixed $id Model.id
-	 * @return bool success (always true)
+	 * @param object $Model CakePHP Model
+	 * @param mixed $id     Model.id
+	 *
+	 * @return boolean $lockObtained (always true)
 	 */
 	public function lock(Model $Model, $id=0) {
+		return $this->lockBlocking($Model, $id);
+	}
+
+	/**
+	 * Obtains a lock for Model + id combination.
+	 *
+	 * BLOCKING - If someone else has obtained this lock,
+	 *   this function will sit and wait (forever) until the lock can be obtained.
+	 *
+	 * Will throw an exception if there was an error obtaining the lock (out of memory, killed, etc..)
+	 *
+	 * The lock may be removed by calling ->unlock(), or it will be automatically removed when the script ends.
+	 *
+	 * @param object $Model CakePHP Model
+	 * @param mixed $id     Model.id
+	 *
+	 * @return boolean $lockObtained (always true)
+	 * @throws LockException
+	 */
+	public function lockBlocking(Model $Model, $id=0) {
+		$locked = $this->_lock($Model, $id, -1);
+		if (empty($locked)) {
+			// Got NULL/error, throw exception
+			throw new LockException('Mysql returned error when obtaining lock');
+		}
+		return true;
+	}
+
+	/**
+	 * Obtains a lock for Model + id combination.
+	 *
+	 * NON-BLOCKING - If someone else has obtained this lock,
+	 *   this function will sit and wait for 1 second, and if it can not obtain
+	 *   the lock, it will return FALSE
+	 *
+	 * The lock may be removed by calling ->unlock(), or it will be automatically removed when the script ends.
+	 *
+	 * @param object $Model CakePHP Model
+	 * @param mixed $id     Model.id
+	 *
+	 * @return boolean $lockObtained
+	 */
+	public function lockNonBlocking(Model $Model, $id=0) {
+		return $this->_lock($Model, $id, -1);
+	}
+
+	/**
+	 * Obtains a lock for Model + id combination.
+	 *
+	 * This will either be blocking or non-blocking,
+	 *   depending on the $blockingTimeout parameter
+	 *
+	 * BLOCKING - (timeout = -1) If someone else has obtained this lock,
+	 *   this function will sit and wait (forever) until the lock can be obtained.
+	 *
+	 * NON-BLOCKING - (timeout > -1) If someone else has obtained this lock,
+	 *   this function will sit and wait for 1 second, and if it can not obtain
+	 *   the lock, it will return FALSE
+	 *
+	 * The lock may be removed by calling ->unlock(), or it will be automatically removed when the script ends.
+	 *
+	 * @link http://dev.mysql.com/doc/refman/5.0/en/miscellaneous-functions.html#function_get-lock
+	 *
+	 * @param object $Model        CakePHP Model
+	 * @param mixed $id            Model.id
+	 * @param int $blockingTimeout [-1] timeout in seconds. -1 for no timeout
+	 *
+	 * @return boolean $lockObtained
+	 */
+	private function _lock(Model $Model, $id=0, $blockingTimeout=-1) {
+		// Passing second argument -1 to GET_LOCK = Timeout
+		//   -1 = Block/wait forever
+		//   1 = Block/wait for 1 second
 		$lockResult = $this->db->fetchAll(
-			"SELECT COALESCE(GET_LOCK(?, -1), 0)",
+			"SELECT COALESCE(GET_LOCK(?, {$blockingTimeout}), 0)",
 			["{$this->prefix}.{$Model->alias}.$id"],
 			['cache' => false]
 		);
 		$lockResult = array_values(Hash::flatten($lockResult))[0];
-		// Passing second argument -1 to GET_LOCK = Timeout = Block/wait forever
 
 		// Possible return values from MySQL
 		// 1: Got lock
-		// 0: Timed out waiting for lock (Will never happen)
+		// 0: Timed out waiting for lock (Will never happen, if blockingTimeout = -1)
 		// NULL (coalesced into 0): Error (out of memory, killed, etc.)
-		if (empty($lockResult)) {
-			// Got NULL/error, throw exception
-			throw new LockException('Mysql returned error when obtaining lock');
-		}
-		return (bool)$lockResult;
+		return (!empty($lockResult));
 	}
 
 	/**
@@ -55,6 +124,7 @@ class LockableBehavior extends ModelBehavior {
 	 *
 	 * @param object $Model
 	 * @param mixed $id Model.id
+	 *
 	 * @return bool success
 	 */
 	public function unlock(Model $Model, $id=0) {
@@ -78,6 +148,8 @@ class LockableBehavior extends ModelBehavior {
 	 * @param array $config
 	 *           $config key 'source' - string name of datasource to use instead of default (a mysql connection in database.php)
 	 *           $config key 'prefix' - string prefix used in key names.  we lock on keys that are "$prefix.{$Model->alias}.$id"
+	 *
+	 * @return void
 	 */
 	public function setup(Model $Model, $config = null) {
 		// Prefix
@@ -99,6 +171,20 @@ class LockableBehavior extends ModelBehavior {
 		}
 	}
 
+	/**
+	 * Simple reconnect to the database
+	 *
+	 * Useful for testing because..
+	 *
+	 *
+	 * If you have a lock obtained with GET_LOCK(),
+	 * it is released when you execute RELEASE_LOCK(),
+	 * execute a new GET_LOCK(), or your connection terminates
+	 * (either normally or abnormally).
+	 * Locks obtained with GET_LOCK() do not interact with transactions.
+	 *
+	 * @return void
+	 */
 	public function rc() {
 		$this->db->reconnect();
 	}

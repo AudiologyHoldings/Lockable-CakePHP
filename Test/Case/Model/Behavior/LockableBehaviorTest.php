@@ -82,6 +82,42 @@ class LockableBehaviorTest extends CakeTestCase {
 		$this->assertTrue($this->Model->unlock(1));
 	}
 
+	public function testLockBlocking() {
+		// lockable
+		$this->assertTrue($this->Model->lockBlocking(1));
+		// now unlock
+		$this->assertTrue($this->Model->unlock(1));
+		// now we can re-lock
+		$this->assertTrue($this->Model->lockBlocking(1));
+		// now unlock (cleanup)
+		$this->assertTrue($this->Model->unlock(1));
+	}
+
+	public function testLockNonBlocking() {
+		// lockable
+		$this->assertTrue($this->Model->lockNonBlocking(1));
+		// now unlock
+		$this->assertTrue($this->Model->unlock(1));
+		// now we can re-lock
+		$this->assertTrue($this->Model->lockNonBlocking(1));
+		// now unlock (cleanup)
+		$this->assertTrue($this->Model->unlock(1));
+	}
+
+	public function testLockNonBlockingTimeout() {
+		$this->assertTrue($this->Model->lockNonBlocking(1));
+		$this->Model->rc();
+		// Wait 100000 microseconds / 100 milliseconds.
+		usleep(100000);
+		$this->Model->rc();
+		$this->assertFalse($this->Model->lockNonBlocking(1));
+		// Wait 1000000 microseconds / 1 seconds.
+		usleep(1000000);
+		$this->Model->rc();
+		$this->assertTrue($this->Model->lockNonBlocking(1));
+		// now unlock (cleanup)
+		$this->assertTrue($this->Model->unlock(1));
+	}
 
 	// Test that locking actually makes me wait if someone else has the lock.
 	/*
