@@ -1,0 +1,8 @@
+{
+  "name": "audiologyholdings/lockable",
+  "description": "CakePHP LockableBehavior for concurrancy locking via Mutex and/or Redis",
+  "type": "cakephp-plugin",
+  "require": {
+    "cakephp/cakephp": ">=2.5.5.4 <3.0.0"
+  }
+}
