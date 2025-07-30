@@ -73,7 +73,7 @@ class LockableBehavior extends ModelBehavior {
 	 * @return boolean $lockObtained
 	 */
 	public function lockNonBlocking(Model $Model, $id=0) {
-		return $this->_lock($Model, $id, -1);
+		return $this->_lock($Model, $id, 1);
 	}
 
 	/**
