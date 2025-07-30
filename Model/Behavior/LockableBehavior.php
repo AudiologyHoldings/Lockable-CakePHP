@@ -73,7 +73,12 @@ class LockableBehavior extends ModelBehavior {
 	 * @return boolean $lockObtained
 	 */
 	public function lockNonBlocking(Model $Model, $id=0) {
-		return $this->_lock($Model, $id, 1);
+		$locked = $this->_lock($Model, $id, 1);
+		if (empty($locked)) {
+			// Got NULL/error, throw exception
+			throw new LockException('Mysql returned error when obtaining lock');
+		}
+		return true;
 	}
 
 	/**
